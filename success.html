@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="" class="">
+
+<head>
+	<meta charset="utf-8">
+	<title>Identity Verification by Stripe</title>
+	<meta name="robots" content="noindex, nofollow">
+	<meta name="googlebot" content="noindex, nofollow, noarchive">
+
+
+	<script nonce="mcEDxROgwOYg9NIH8f3R2w==">
+		var ENABLE_CLIENT_INIT_ERROR_DETECTOR = false;
+	</script>
+
+	<script nonce="mcEDxROgwOYg9NIH8f3R2w==">
+		!(function() {
+  var APP_NAME = 'seamless_standard';
+  var TINY_PRELOADED_CSRF_REGEX = /csrf_token&quot;:&quot;([^&]+)&quot;/;
+  var OAUTH_CONFIG_CSRF_REGEX = /csrf&quot;:&quot;([^&]+)&quot;/;
+  var LOAD_ERROR_REPORT_ENDPOINT = '/ajax/load_error_report';
+  var INIT_ERROR_REPORT_ENDPOINT = '/ajax/client_init_error_report';
+  var INIT_TIMEOUT_REPORT_ENDPOINT = '/ajax/client_init_timeout_report';
+  var SENTRY_INIT_TIMEOUT = 30000;
+  var SENTRY_INIT_TIMEOUT_ERROR_MESSAGE =
+    'Sentry failed to initialize within ' +
+    SENTRY_INIT_TIMEOUT +
+    'ms of pageload';
+
+  var hasSentryInitialized = false;
+
+  var failedJSScriptSrcs = [];
+  var failedCSSScriptHrefs = [];
+  var mutationObserver = null;
+
+  function extractCSRFToken() {
+    var tinyPreloaded = document.getElementById('tiny_preloaded_json');
+    var m;
+    if (tinyPreloaded) {
+      m = tinyPreloaded.textContent.match(TINY_PRELOADED_CSRF_REGEX);
+      return m ? m[1] : null;
+    }
+
+    var oauthConfig = document.getElementById('oauth_config');
+    if (oauthConfig) {
+      m = oauthConfig.textContent.match(OAUTH_CONFIG_CSRF_REGEX);
+      return m ? m[1] : null;
+    }
+
+    return null;
+  }
+
+  function stripeJSLoadError(e) {
+    if (e.target && e.target.src) {
+      failedJSScriptSrcs.push(e.target.src);
+    }
+  }
+
+  function stripeCSSLoadError(e) {
+    if (e.target && e.target.href) {
+      failedCSSScriptHrefs.push(e.target.href);
+    }
+  }
+
+  if ('MutationObserver' in window) {
+    mutationObserver = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        var script;
+        for (var i = 0; i < mutation.addedNodes.length; i++) {
+          script = mutation.addedNodes[i];
+          if (script.nodeName === 'SCRIPT') {
+            script.addEventListener('error', stripeJSLoadError, false);
+          }
+          if (script.nodeName === 'LINK') {
+            script.addEventListener('error', stripeCSSLoadError, false);
+          }
+        }
+      });
+    });
+    mutationObserver.observe(document, {childList: true, subtree: true});
+  }
+
+  function showErrorMessage() {
+    var loadingElement = document.querySelector('#app-loading');
+    if (loadingElement && loadingElement.style) {
+      loadingElement.style.display = 'none';
+    }
+    var errorMessageElement = document.querySelector('#app-loading-error-message');
+    if (errorMessageElement && errorMessageElement.style) {
+      errorMessageElement.style.display = 'flex';
+    }
+  }
+
+  function handleError(e) {
+    var data = new FormData();
+    data.append('app', APP_NAME);
+    if (e.message) {
+      data.append('message', e.message);
+    } else if (e.reason && e.reason.message) {
+      data.append('message', e.reason.message);
+    }
+
+    var csrfToken = extractCSRFToken();
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', INIT_ERROR_REPORT_ENDPOINT);
+    xhr.setRequestHeader('x-stripe-csrf-token', csrfToken);
+    xhr.send(data);
+    // if sentry has initialized, error display will be handled in the client
+    if (!hasSentryInitialized) {
+      showErrorMessage();
+    }
+  }
+
+  function handleTimeout(e) {
+    var data = new FormData();
+    data.append('app', APP_NAME);
+    if (e.message) {
+      data.append('message', e.message);
+    } else if (e.reason && e.reason.message) {
+      data.append('message', e.reason.message);
+    }
+
+    var csrfToken = extractCSRFToken();
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', INIT_TIMEOUT_REPORT_ENDPOINT);
+    xhr.setRequestHeader('x-stripe-csrf-token', csrfToken);
+    xhr.send(data);
+  }
+
+  // We need to get the CSRF token from tinyPreloaded, which is in
+  // document.body, but errors can occur before the DOM is loaded, so store
+  // those errors until the DOM is loaded, then report them.
+  var errorBuffer = [];
+
+  function bufferError(e) {
+    errorBuffer.push(e);
+  }
+
+  function handleBufferedErrors() {
+    for (var i = 0; i < errorBuffer.length; i++) {
+      handleError(errorBuffer[i]);
+    }
+    errorBuffer = [];
+  }
+
+  // As a final failsafe for any case where our global event handler does not
+  // catch an issue, emit a metric if the client app does not initialize within
+  // a set timeout. This is a separate metric because it's necessarily noisy,
+  // since client app initialization can be slow due to network latency and
+  // client hardware.
+  var sentryInitTimer = setTimeout(function() {
+    if (ENABLE_CLIENT_INIT_ERROR_DETECTOR) {
+      handleTimeout(new Error(SENTRY_INIT_TIMEOUT_ERROR_MESSAGE));
+    }
+  }, SENTRY_INIT_TIMEOUT);
+
+  window.addEventListener('DOMContentLoaded', function(e) {
+    if (mutationObserver) {
+      mutationObserver.disconnect();
+      mutationObserver = null;
+    }
+
+    if (failedJSScriptSrcs.length || failedCSSScriptHrefs.length) {
+      var csrfToken = extractCSRFToken();
+      var data = new FormData();
+      var i;
+      data.append('app', APP_NAME);
+      for (i = 0; i < failedJSScriptSrcs.length; i++) {
+        data.append('scripts[]', failedJSScriptSrcs[i]);
+      }
+
+      for (i = 0; i < failedCSSScriptHrefs.length; i++) {
+        data.append('css[]', failedCSSScriptHrefs[i]);
+      }
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', LOAD_ERROR_REPORT_ENDPOINT);
+      xhr.setRequestHeader('x-stripe-csrf-token', csrfToken);
+      xhr.send(data);
+    }
+
+    // if sentry client has already initialized when DOMContentLoaded fires,
+    // then event handlers have been removed and we don't need to set up any
+    // new ones
+    if (ENABLE_CLIENT_INIT_ERROR_DETECTOR && !hasSentryInitialized) {
+      // Once DOM is loaded, handle buffered errors and then switch from
+      // buffering errors to just reporting them immediately
+      handleBufferedErrors();
+      window.removeEventListener('error', bufferError);
+      window.removeEventListener('unhandledrejection', bufferError);
+      window.addEventListener('error', handleError);
+      window.addEventListener('unhandledrejection', handleError);
+      window.__STRIPE_CLIENT_INIT_ERROR_DETECTOR_HANDOFF__ = function() {
+        hasSentryInitialized = true;
+        window.removeEventListener('error', handleError);
+        window.removeEventListener('unhandledrejection', handleError);
+        clearTimeout(sentryInitTimer);
+      };
+    }
+  });
+
+  if (ENABLE_CLIENT_INIT_ERROR_DETECTOR) {
+    window.addEventListener('error', bufferError);
+    window.addEventListener('unhandledrejection', bufferError);
+
+    window.__STRIPE_CLIENT_INIT_ERROR_DETECTOR_HANDOFF__ = function() {
+      hasSentryInitialized = true;
+      window.removeEventListener('error', bufferError);
+      window.removeEventListener('unhandledrejection', bufferError);
+      clearTimeout(sentryInitTimer);
+    };
+  }
+})();
+	</script>
+
+
+	<style>
+		html {
+			background-color: #F8FAFC;
+		}
+
+		html,
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+			font-size: 14px;
+			height: 100%;
+		}
+
+		#hv-root {
+			height: 100%;
+		}
+
+		#hv-embedded-root {
+			height: 100%;
+			background-color: white;
+			padding: 30px;
+		}
+
+		.page-loading {
+			height: 100%;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			flex-direction: column;
+			margin: -8px;
+		}
+
+		.hidden {
+			display: none;
+		}
+
+		.PageSpinner {
+			width: 12px;
+			height: 12px;
+		}
+
+		.PageSpinner-svg {
+			position: relative;
+			display: -ms-flexbox;
+			display: flex;
+			width: 12px;
+			height: 12px;
+			color: #8792a2;
+			transform-origin: 50% 50%;
+			transition-timing-function: ease;
+			transition-property: opacity, transform;
+			animation: SpinnerAnimationShow 250ms normal ease, SpinnerAnimationRotation 0.6s linear infinite;
+		}
+
+		@keyframes SpinnerAnimationShow {
+			from {
+				opacity: 0;
+			}
+
+			to {
+				opacity: 1;
+			}
+		}
+
+		@keyframes SpinnerAnimationRotation {
+			100% {
+				transform: rotate(360deg);
+			}
+		}
+
+		@media screen and (max-width: 460px) {
+			html {
+				background-color: #ffffff;
+			}
+		}
+	</style>
+
+	<link rel="stylesheet"
+		href="https://b.stripecdn.com/manage-statics-srv/assets/seamless_standard.288cfbff3f321d460491.css">
+
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0,user-scalable=0">
+</head>
+
+<body class=" ">
+	<div id="hv-root" class=" ">
+		<div class="page-loading">
+			<div class="PageSpinner">
+				<svg viewBox="0 0 24 24" class="PageSpinner-svg">
+					<g transform="translate(1 1)" fill-rule="nonzero" fill="none">
+						<circle cx="11" cy="11" r="11"></circle>
+						<path
+							d="M10.998 22a.846.846 0 0 1 0-1.692 9.308 9.308 0 0 0 0-18.616 9.286 9.286 0 0 0-7.205 3.416.846.846 0 1 1-1.31-1.072A10.978 10.978 0 0 1 10.998 0c6.075 0 11 4.925 11 11s-4.925 11-11 11z"
+							fill="currentColor"></path>
+					</g>
+				</svg>
+			</div>
+		</div>
+	</div>
+	<div id="hv-embedded-root" class="hidden ">
+		<div class="page-loading">
+			<div class="PageSpinner">
+				<svg viewBox="0 0 24 24" class="PageSpinner-svg">
+					<g transform="translate(1 1)" fill-rule="nonzero" fill="none">
+						<circle cx="11" cy="11" r="11"></circle>
+						<path
+							d="M10.998 22a.846.846 0 0 1 0-1.692 9.308 9.308 0 0 0 0-18.616 9.286 9.286 0 0 0-7.205 3.416.846.846 0 1 1-1.31-1.072A10.978 10.978 0 0 1 10.998 0c6.075 0 11 4.925 11 11s-4.925 11-11 11z"
+							fill="currentColor"></path>
+					</g>
+				</svg>
+			</div>
+		</div>
+	</div>
+	<script src="https://js.stripe.com/v3/"></script>
+
+	<script type="application/json" data-length="30001" id="preloaded_json">
+		{&quot;csrf_token&quot;:&quot;whmXXcS7RgvesmhxeNrQKAE20me6frMQAHBq2ly-y2ekgUc1Drs5mitjvmmsdN1NYpyHsyJu-jraIKzhJdl_JDw-AYTZVJyIQdVFgCy0jzFdQuFfeMEOku-5AxfCbUC4GHrcWGM-1Q==&quot;,&quot;urls&quot;:{&quot;failure_url&quot;:&quot;https://dashboard.stripe.com/test/connect/accounts/acct_1Mo1aCDAdU5zig1A/activity&quot;,&quot;success_url&quot;:&quot;https://dashboard.stripe.com/test/connect/accounts/acct_1Mo1aCDAdU5zig1A/activity&quot;},&quot;accept_language&quot;:null,&quot;admin&quot;:false,&quot;use_cors&quot;:true,&quot;hosts&quot;:{&quot;api&quot;:&quot;https://api.stripe.com&quot;,&quot;checkout&quot;:&quot;https://checkout.stripe.com&quot;,&quot;connect&quot;:&quot;https://connect.stripe.com&quot;,&quot;dashboard&quot;:&quot;https://dashboard.stripe.com&quot;,&quot;site&quot;:&quot;https://stripe.com&quot;,&quot;support&quot;:&quot;https://support.stripe.com&quot;,&quot;u2f_facets&quot;:&quot;https://dashboard.stripe.com&quot;,&quot;uploads&quot;:&quot;https://files.stripe.com&quot;},&quot;geoip_country&quot;:&quot;US&quot;,&quot;stripethirdparty_base_url&quot;:&quot;https://b.stripecdn.com/stripethirdparty-srv/assets/&quot;,&quot;recaptcha_key&quot;:&quot;6LezRwYTAAAAAClbeZahYjeSYHsbwpzjEQ0hQ1jB&quot;,&quot;recaptcha_invisible_key&quot;:&quot;6LfLtmEUAAAAAJe3piXBGzDBQIjMIjleVXHEOQoZ&quot;,&quot;recaptcha_enterprise&quot;:true,&quot;recaptcha_enterprise_invisible_key&quot;:&quot;6LdzwiIaAAAAAOHEauFw8LsfEdp_q3F7wWlYipb5&quot;,&quot;recaptcha_enterprise_checkbox_key&quot;:&quot;6LcOeCEaAAAAALmUdD_aH5Y3Z4f_BtTW5BwjqGSk&quot;,&quot;recaptcha_disabled&quot;:false,&quot;platform_profile&quot;:{&quot;account_id&quot;:&quot;acct_1Jr7YGDgCvtrZHs2&quot;,&quot;name&quot;:&quot;Zerosoft&quot;,&quot;client_application_id&quot;:&quot;ca_LceAWQLRVhipnLqxldJvKdO5UtHMB8lz&quot;,&quot;icon&quot;:&quot;https://files.stripe.com/links/MDB8YWNjdF8xSnI3WUdEZ0N2dHJaSHMyfGZsX2xpdmVfemRJalUxVEI5bmhVZ1RTdG1BMGZnckpF00V0lfvnx1&quot;,&quot;color&quot;:&quot;ffffff&quot;,&quot;accent_color&quot;:&quot;6772e5&quot;,&quot;support&quot;:{&quot;email&quot;:null,&quot;phone&quot;:null}},&quot;treatments&quot;:{&quot;billing_onboarding_tasklist_new_users&quot;:&quot;control&quot;,&quot;express_app_transactional_payout_message&quot;:&quot;control&quot;,&quot;growth_billing_scale_upgrade&quot;:&quot;control&quot;,&quot;growth_payment_link_subscriptions&quot;:&quot;control&quot;,&quot;growth_insights_on_customers_list&quot;:&quot;control&quot;,&quot;ash_enable_task_detail_page&quot;:&quot;control&quot;,&quot;caribou_beta_promo&quot;:&quot;control&quot;,&quot;billing_onboarding_tasklist_new_users_aa&quot;:&quot;control_test&quot;,&quot;dashboard_new_payment_analytics&quot;:&quot;treatment&quot;,&quot;dashboard_bento_revenue_opportunities&quot;:&quot;control&quot;,&quot;test_experiment_2&quot;:&quot;control&quot;,&quot;payouts_experience_amount_cancellation_dashboard_banner&quot;:&quot;control&quot;,&quot;payouts_platform_remove_future_payout_attribution&quot;:&quot;control&quot;,&quot;payouts_platform_rename_balance_sections&quot;:&quot;control&quot;,&quot;instant_payouts_button_design&quot;:&quot;control&quot;,&quot;capital_choice_of_loan_duration&quot;:&quot;control&quot;,&quot;capital_bento_upsell&quot;:&quot;treatment&quot;,&quot;capital_loan_impact_calculator&quot;:&quot;treatment&quot;,&quot;revenue_recognition_promotion&quot;:&quot;treatment&quot;,&quot;invoicing_invoice_editor_fast_line_item_editing&quot;:&quot;control&quot;,&quot;invoicing_dashboard_landing_page_v2&quot;:&quot;control&quot;,&quot;invoicing_dashboard_landing_page_v3&quot;:&quot;treatment&quot;,&quot;invoicing_recommendation_cards&quot;:&quot;control&quot;,&quot;invoicing_recommendation_cards_v2&quot;:&quot;treatment&quot;,&quot;invoicing_onboarding_flow&quot;:&quot;control&quot;,&quot;dashboard_m1_nav_new_merchant&quot;:&quot;treatment&quot;,&quot;dashboard_drop_unused_fields_payments_list&quot;:&quot;control&quot;,&quot;dashboard_decline_reasons&quot;:&quot;control&quot;,&quot;dashboard_payment_method_adoption_1&quot;:&quot;treatment&quot;,&quot;dashboard_payout_modals&quot;:&quot;control&quot;,&quot;dashboard_dispute_onboarding&quot;:&quot;treatment&quot;,&quot;direct_upfront_full_ssn&quot;:&quot;control&quot;,&quot;ark_company_structures_us&quot;:&quot;treatment&quot;,&quot;ark_company_structures_uae&quot;:&quot;control&quot;,&quot;ark_company_structures_eu&quot;:&quot;treatment&quot;,&quot;ark_company_structures_aunz&quot;:&quot;control&quot;,&quot;ark_company_structures_hk&quot;:&quot;control&quot;,&quot;ark_company_structures_jp&quot;:&quot;control&quot;,&quot;express_1_click_payee_onboarding&quot;:&quot;control&quot;,&quot;cbsp_platform_isolation&quot;:&quot;treatment&quot;,&quot;onboarding_risk_evaluation_survey_experiment&quot;:&quot;control&quot;,&quot;ark_onboarding_sync_verify_direct&quot;:&quot;control&quot;,&quot;ark_onboarding_sync_verify_standard&quot;:&quot;control&quot;,&quot;support_settings_consolidation&quot;:&quot;control&quot;,&quot;onboarding_verification_image_validations&quot;:&quot;treatment&quot;,&quot;growth_setup_cheatsheets&quot;:&quot;treatment&quot;,&quot;growth_billing_cheatsheets&quot;:&quot;control&quot;,&quot;growth_pricing_table_recommendation&quot;:&quot;control&quot;,&quot;growth_lobby_copy&quot;:&quot;control&quot;,&quot;finrep_fee_report_rollout&quot;:&quot;control&quot;,&quot;connections_in_onboarding_standard_api_v2&quot;:&quot;treatment&quot;,&quot;channel_recommendation_banner&quot;:&quot;treatment&quot;,&quot;tax_activation_popup_same_page&quot;:&quot;treatment&quot;,&quot;default_tax_behavior&quot;:&quot;treatment&quot;,&quot;reduce_data_story_runner_polling_delay&quot;:&quot;treatment&quot;,&quot;lpm_adoption_recommended_lpm_settings_page_v2&quot;:&quot;treatment&quot;,&quot;dashboard_payments_list_enhancements_m1&quot;:&quot;control&quot;,&quot;connect_onboarding_address_suggestion&quot;:&quot;treatment&quot;,&quot;ark_conversion_to_sail_next_m1&quot;:&quot;control&quot;,&quot;billing_starter_plan_upsell_insight_module_message&quot;:&quot;treatment&quot;,&quot;billing_legacy_plan_upsell_insight_module_message&quot;:&quot;control&quot;,&quot;ab_test_account_claim_missing_tin_to_bank_last_4&quot;:&quot;treatment&quot;,&quot;app_marketplace_trial&quot;:&quot;control&quot;,&quot;climate_dashboard_payment_success_promotion_new_users&quot;:&quot;treatment&quot;,&quot;rfa_relaunch&quot;:&quot;treatment&quot;,&quot;payouts_platform_settings_modal_v2&quot;:&quot;control&quot;,&quot;upfront_onboarding&quot;:&quot;control&quot;,&quot;billing_onboarding_tasklist&quot;:&quot;control&quot;,&quot;billing_onboarding_tasklist_aa&quot;:&quot;control&quot;,&quot;capital_default_selected_offer&quot;:&quot;control&quot;,&quot;capital_offer_display_order&quot;:&quot;control&quot;,&quot;dashboard_customer_analytics&quot;:&quot;control&quot;,&quot;payouts_platform_first_payout_delay&quot;:&quot;control&quot;,&quot;invoicing_spice_editor_v1&quot;:&quot;treatment&quot;,&quot;invoicing_gb_editor_enhancements&quot;:&quot;control&quot;,&quot;dashboard_m1_nav_existing_merchant&quot;:&quot;control&quot;,&quot;express_app_day_one_dash&quot;:&quot;control&quot;,&quot;ark_enable_expanded_persons_v2&quot;:&quot;control&quot;,&quot;skippable_bank_account&quot;:&quot;control&quot;,&quot;sqsp_skippable_bank_account&quot;:&quot;control&quot;,&quot;growth_contact_sales_cta&quot;:&quot;control&quot;,&quot;growth_global_tax_insight_module&quot;:&quot;control&quot;,&quot;growth_new_nux&quot;:&quot;control&quot;,&quot;growth_account_activation_banners&quot;:&quot;control&quot;,&quot;insights_benchmarking&quot;:&quot;control&quot;,&quot;emea_marketing_consent_phase_2&quot;:&quot;control&quot;,&quot;onboarding_encourage_director_addition&quot;:&quot;control&quot;,&quot;product_tour_invoicing_mvp&quot;:&quot;control&quot;,&quot;request_support_on_account_application&quot;:&quot;control&quot;,&quot;welcome_page_setup_later_target&quot;:&quot;control&quot;,&quot;lime_business_type_flow&quot;:&quot;control&quot;,&quot;climate_dashboard_payment_success_promotion_existing_users&quot;:&quot;control&quot;,&quot;arkv2_custom_onboarding&quot;:&quot;control&quot;},&quot;analytics_rb_event_id&quot;:&quot;29c75bb2-00b7-43b0-9e12-053e39dde201&quot;,&quot;exp_page_load_id&quot;:&quot;30f25481-a582-4ba1-8fd5-a6552fd2a2cb&quot;,&quot;locale&quot;:{&quot;auto_locale&quot;:false,&quot;locale&quot;:null},&quot;available_locales&quot;:[&quot;bg-BG&quot;,&quot;cs-CZ&quot;,&quot;da-DK&quot;,&quot;de-DE&quot;,&quot;el-GR&quot;,&quot;en-AU&quot;,&quot;en-CA&quot;,&quot;en-GB&quot;,&quot;en-IE&quot;,&quot;en-IN&quot;,&quot;en-NZ&quot;,&quot;en-SG&quot;,&quot;en-US&quot;,&quot;es-ES&quot;,&quot;es-419&quot;,&quot;et-EE&quot;,&quot;fi-FI&quot;,&quot;fr-FR&quot;,&quot;fr-CA&quot;,&quot;hu-HU&quot;,&quot;id-ID&quot;,&quot;it-IT&quot;,&quot;ja-JP&quot;,&quot;lt-LT&quot;,&quot;lv-LV&quot;,&quot;nb-NO&quot;,&quot;nl-NL&quot;,&quot;pl-PL&quot;,&quot;pt-BR&quot;,&quot;pt-PT&quot;,&quot;ro-RO&quot;,&quot;sl-SI&quot;,&quot;sk-SK&quot;,&quot;sv-SE&quot;,&quot;zh-Hans&quot;,&quot;zh-Hant-HK&quot;],&quot;publishable_key&quot;:&quot;pk_test_51N3a8gRUQrvBkoWUjiPAXP6WYF9Wf431MXx9woLJWuXz6oDhVu0ZSagdeqnUkOxb3AJJWkwnd9hNwZMIzr0xfH9S00j858VX7X&quot;,&quot;connected_account_id&quot;:&quot;acct_1N3a8gRUQrvBkoWU&quot;,&quot;non_account_opener_owners_exist&quot;:false,&quot;non_account_opener_directors_exist&quot;:false,&quot;non_account_opener_executives_exist&quot;:false,&quot;previously_due&quot;:[],&quot;embedded_flow&quot;:false,&quot;merchant_is_configured&quot;:false,&quot;merchant_has_2fa&quot;:false,&quot;merchant_user_email&quot;:null,&quot;session_api_key&quot;:&quot;ek_test_YWNjdF8xTjNhOGdSVVFydkJrb1dVLHhONzJESVloaFRSSmFQSmJ2d0lqTUlRMkZoSmIxVWc_00XXsNhzwn&quot;,&quot;session_api_permissions&quot;:[&quot;seamless_access&quot;,&quot;seamless_access_read&quot;],&quot;embedded_session_api_key&quot;:null,&quot;connected_account&quot;:null,&quot;authed_experience&quot;:false,&quot;livemode&quot;:false,&quot;onboarding_config&quot;:{&quot;id&quot;:&quot;&quot;,&quot;enabled_countries&quot;:[&quot;AE&quot;,&quot;AT&quot;,&quot;AU&quot;,&quot;BE&quot;,&quot;BG&quot;,&quot;BR&quot;,&quot;CA&quot;,&quot;CH&quot;,&quot;CY&quot;,&quot;CZ&quot;,&quot;DE&quot;,&quot;DK&quot;,&quot;EE&quot;,&quot;ES&quot;,&quot;FI&quot;,&quot;FR&quot;,&quot;GB&quot;,&quot;GI&quot;,&quot;GR&quot;,&quot;HK&quot;,&quot;HR&quot;,&quot;HU&quot;,&quot;IE&quot;,&quot;IN&quot;,&quot;IT&quot;,&quot;JP&quot;,&quot;LI&quot;,&quot;LT&quot;,&quot;LU&quot;,&quot;LV&quot;,&quot;MT&quot;,&quot;MX&quot;,&quot;MY&quot;,&quot;NL&quot;,&quot;NO&quot;,&quot;NZ&quot;,&quot;PL&quot;,&quot;PT&quot;,&quot;RO&quot;,&quot;SE&quot;,&quot;SG&quot;,&quot;SI&quot;,&quot;SK&quot;,&quot;TH&quot;,&quot;US&quot;],&quot;limited_tos_countries&quot;:[],&quot;requested_capabilities_by_country&quot;:{&quot;AE&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;link_payments&quot;],&quot;AT&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;AU&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;BE&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;BG&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;BR&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;boleto_payments&quot;],&quot;CA&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;affirm_payments&quot;,&quot;klarna_payments&quot;,&quot;acss_debit_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;CH&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;CY&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;CZ&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;DE&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;DK&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;EE&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;ES&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;FI&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;FR&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;],&quot;GB&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bacs_debit_payments&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;GI&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;GR&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;HK&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;HR&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;HU&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;IE&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;IN&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;],&quot;IT&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;JP&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;jcb_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;LI&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;LT&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;LU&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;LV&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;MT&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;MX&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;oxxo_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;MY&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;grabpay_payments&quot;,&quot;link_payments&quot;],&quot;NL&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;NO&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;NZ&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;PL&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;PT&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;RO&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;SE&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;klarna_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;SG&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;grabpay_payments&quot;,&quot;paynow_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;SI&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;SK&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;link_payments&quot;,&quot;blik_payments&quot;,&quot;cartes_bancaires_payments&quot;],&quot;TH&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;promptpay_payments&quot;],&quot;US&quot;:[&quot;card_payments&quot;,&quot;transfers&quot;,&quot;afterpay_clearpay_payments&quot;,&quot;affirm_payments&quot;,&quot;klarna_payments&quot;,&quot;acss_debit_payments&quot;,&quot;bancontact_payments&quot;,&quot;eps_payments&quot;,&quot;giropay_payments&quot;,&quot;ideal_payments&quot;,&quot;p24_payments&quot;,&quot;sofort_payments&quot;,&quot;sepa_debit_payments&quot;,&quot;us_bank_account_ach_payments&quot;,&quot;link_payments&quot;,&quot;cartes_bancaires_payments&quot;]}},&quot;handoff_routes&quot;:[[&quot;sprt&quot;,&quot;https://support.stripe.com/handoff-healthcheck&quot;,&quot;https://support.stripe.com/handoff&quot;],[&quot;conv&quot;,&quot;https://support-conversations.stripe.com/handoff-healthcheck&quot;,&quot;https://support-conversations.stripe.com/handoff&quot;],[&quot;site&quot;,&quot;https://stripe.com/handoff-healthcheck&quot;,&quot;https://stripe.com/handoff&quot;],[&quot;mrkt&quot;,&quot;https://marketplace.stripe.com/handoff-healthcheck&quot;,&quot;https://marketplace.stripe.com/handoff&quot;],[&quot;dash&quot;,&quot;https://dashboard.stripe.com/handoff-healthcheck&quot;,&quot;https://dashboard.stripe.com/handoff&quot;]],&quot;client_application_id&quot;:&quot;ca_LceAWQLRVhipnLqxldJvKdO5UtHMB8lz&quot;,&quot;flags&quot;:{&quot;alternative_requirements_ssn_last_4_to_ssn_full&quot;:false,&quot;ark_combined_business_type_and_company_structures_ae&quot;:true,&quot;ark_combined_business_type_and_company_structures_ca&quot;:false,&quot;ark_combined_business_type_and_company_structures_my&quot;:true,&quot;ark_combined_business_type_and_company_structures_sg&quot;:true,&quot;ark_combined_business_type_and_company_structures_th&quot;:true,&quot;ca_orr_rollout&quot;:false,&quot;dashboard_locale_dependent_subregion_display&quot;:false,&quot;dashboard_locale_dependent_subregion_sorting&quot;:false,&quot;enable_mute_unexpected_errors&quot;:true,&quot;enable_myinfo_onboarding&quot;:true,&quot;bank_connections_in_ua7_onboarding_enabled&quot;:true,&quot;ark_combined_business_type_and_company_structures_au&quot;:true,&quot;ark_combined_business_type_and_company_structures_de&quot;:true,&quot;ark_combined_business_type_and_company_structures_in&quot;:true,&quot;ark_company_structures_eu_beta&quot;:false,&quot;ark_company_structures_us_beta&quot;:false,&quot;ark_individual_company_structures&quot;:false,&quot;ark_onboarding_sync_verify&quot;:false,&quot;bapi_controlled_content_endpoints_enabled&quot;:true,&quot;can_update_verified_business_tax_id&quot;:false,&quot;connect_account_app_us_bank_account_payments&quot;:true,&quot;connect_onboarding_is_working_with_stripe_sidebar_text&quot;:false,&quot;dashboard_graphqllistview_sync_variables_from_routing_location&quot;:true,&quot;express_app_concessions_payouts_only&quot;:false,&quot;express_app_concessions_earnings_tab_opt_out&quot;:false,&quot;express_app_concessions_mobile_opt_out&quot;:false,&quot;express_crypto_payout_enabled&quot;:false,&quot;export_via_bapi_enabled&quot;:false,&quot;tax_reporting_new_payee_experience&quot;:true,&quot;use_livemode_from_preloaded&quot;:false,&quot;set_bank_account_type_ae&quot;:false,&quot;set_bank_account_type_ag&quot;:false,&quot;set_bank_account_type_al&quot;:false,&quot;set_bank_account_type_am&quot;:false,&quot;set_bank_account_type_ao&quot;:false,&quot;set_bank_account_type_ar&quot;:false,&quot;set_bank_account_type_at&quot;:false,&quot;set_bank_account_type_au&quot;:false,&quot;set_bank_account_type_az&quot;:false,&quot;set_bank_account_type_ba&quot;:false,&quot;set_bank_account_type_bd&quot;:false,&quot;set_bank_account_type_be&quot;:false,&quot;set_bank_account_type_bg&quot;:false,&quot;set_bank_account_type_bh&quot;:false,&quot;set_bank_account_type_bj&quot;:false,&quot;set_bank_account_type_bn&quot;:false,&quot;set_bank_account_type_bo&quot;:false,&quot;set_bank_account_type_br&quot;:false,&quot;set_bank_account_type_bs&quot;:false,&quot;set_bank_account_type_bt&quot;:false,&quot;set_bank_account_type_bw&quot;:false,&quot;set_bank_account_type_ca&quot;:false,&quot;set_bank_account_type_ch&quot;:false,&quot;set_bank_account_type_ci&quot;:false,&quot;set_bank_account_type_cl&quot;:true,&quot;set_bank_account_type_co&quot;:true,&quot;set_bank_account_type_cr&quot;:false,&quot;set_bank_account_type_cy&quot;:false,&quot;set_bank_account_type_cz&quot;:false,&quot;set_bank_account_type_de&quot;:false,&quot;set_bank_account_type_dk&quot;:false,&quot;set_bank_account_type_do&quot;:false,&quot;set_bank_account_type_dz&quot;:false,&quot;set_bank_account_type_ec&quot;:false,&quot;set_bank_account_type_ee&quot;:false,&quot;set_bank_account_type_eg&quot;:false,&quot;set_bank_account_type_es&quot;:false,&quot;set_bank_account_type_et&quot;:false,&quot;set_bank_account_type_fi&quot;:false,&quot;set_bank_account_type_fr&quot;:false,&quot;set_bank_account_type_ga&quot;:false,&quot;set_bank_account_type_gb&quot;:false,&quot;set_bank_account_type_ge&quot;:false,&quot;set_bank_account_type_gh&quot;:false,&quot;set_bank_account_type_gi&quot;:false,&quot;set_bank_account_type_gm&quot;:false,&quot;set_bank_account_type_gr&quot;:false,&quot;set_bank_account_type_gt&quot;:false,&quot;set_bank_account_type_gy&quot;:false,&quot;set_bank_account_type_hk&quot;:false,&quot;set_bank_account_type_hr&quot;:false,&quot;set_bank_account_type_hu&quot;:false,&quot;set_bank_account_type_id&quot;:false,&quot;set_bank_account_type_ie&quot;:false,&quot;set_bank_account_type_il&quot;:false,&quot;set_bank_account_type_in&quot;:false,&quot;set_bank_account_type_is&quot;:false,&quot;set_bank_account_type_it&quot;:false,&quot;set_bank_account_type_jm&quot;:false,&quot;set_bank_account_type_jo&quot;:false,&quot;set_bank_account_type_jp&quot;:false,&quot;set_bank_account_type_ke&quot;:false,&quot;set_bank_account_type_kh&quot;:false,&quot;set_bank_account_type_kr&quot;:false,&quot;set_bank_account_type_kw&quot;:false,&quot;set_bank_account_type_kz&quot;:false,&quot;set_bank_account_type_la&quot;:false,&quot;set_bank_account_type_lc&quot;:false,&quot;set_bank_account_type_li&quot;:false,&quot;set_bank_account_type_lk&quot;:false,&quot;set_bank_account_type_lt&quot;:false,&quot;set_bank_account_type_lu&quot;:false,&quot;set_bank_account_type_lv&quot;:false,&quot;set_bank_account_type_ma&quot;:false,&quot;set_bank_account_type_mc&quot;:false,&quot;set_bank_account_type_md&quot;:false,&quot;set_bank_account_type_mg&quot;:false,&quot;set_bank_account_type_mk&quot;:false,&quot;set_bank_account_type_mn&quot;:false,&quot;set_bank_account_type_mo&quot;:false,&quot;set_bank_account_type_mt&quot;:false,&quot;set_bank_account_type_mu&quot;:false,&quot;set_bank_account_type_mx&quot;:false,&quot;set_bank_account_type_my&quot;:false,&quot;set_bank_account_type_mz&quot;:false,&quot;set_bank_account_type_na&quot;:false,&quot;set_bank_account_type_ne&quot;:false,&quot;set_bank_account_type_ng&quot;:false,&quot;set_bank_account_type_nl&quot;:false,&quot;set_bank_account_type_no&quot;:false,&quot;set_bank_account_type_nz&quot;:false,&quot;set_bank_account_type_om&quot;:false,&quot;set_bank_account_type_pa&quot;:false,&quot;set_bank_account_type_pe&quot;:false,&quot;set_bank_account_type_ph&quot;:false,&quot;set_bank_account_type_pk&quot;:false,&quot;set_bank_account_type_pl&quot;:false,&quot;set_bank_account_type_pt&quot;:false,&quot;set_bank_account_type_py&quot;:false,&quot;set_bank_account_type_qa&quot;:false,&quot;set_bank_account_type_ro&quot;:false,&quot;set_bank_account_type_rs&quot;:false,&quot;set_bank_account_type_rw&quot;:false,&quot;set_bank_account_type_sa&quot;:false,&quot;set_bank_account_type_se&quot;:false,&quot;set_bank_account_type_sg&quot;:false,&quot;set_bank_account_type_si&quot;:false,&quot;set_bank_account_type_sk&quot;:false,&quot;set_bank_account_type_sm&quot;:false,&quot;set_bank_account_type_sn&quot;:false,&quot;set_bank_account_type_sv&quot;:false,&quot;set_bank_account_type_th&quot;:false,&quot;set_bank_account_type_tn&quot;:false,&quot;set_bank_account_type_tr&quot;:false,&quot;set_bank_account_type_tt&quot;:false,&quot;set_bank_account_type_tw&quot;:false,&quot;set_bank_account_type_tz&quot;:false,&quot;set_bank_account_type_us&quot;:false,&quot;set_bank_account_type_uy&quot;:false,&quot;set_bank_account_type_uz&quot;:false,&quot;set_bank_account_type_vn&quot;:false,&quot;set_bank_account_type_za&quot;:false,&quot;new_bank_account_form_ae&quot;:false,&quot;new_bank_account_form_at&quot;:false,&quot;new_bank_account_form_au&quot;:false,&quot;new_bank_account_form_be&quot;:false,&quot;new_bank_account_form_bg&quot;:false,&quot;new_bank_account_form_br&quot;:true,&quot;new_bank_account_form_ca&quot;:false,&quot;new_bank_account_form_ch&quot;:false,&quot;new_bank_account_form_cy&quot;:false,&quot;new_bank_account_form_cz&quot;:false,&quot;new_bank_account_form_de&quot;:false,&quot;new_bank_account_form_dk&quot;:false,&quot;new_bank_account_form_ee&quot;:false,&quot;new_bank_account_form_es&quot;:false,&quot;new_bank_account_form_fi&quot;:false,&quot;new_bank_account_form_fr&quot;:false,&quot;new_bank_account_form_gb&quot;:false,&quot;new_bank_account_form_gi&quot;:false,&quot;new_bank_account_form_gr&quot;:false,&quot;new_bank_account_form_hk&quot;:false,&quot;new_bank_account_form_hr&quot;:true,&quot;new_bank_account_form_hu&quot;:false,&quot;new_bank_account_form_ie&quot;:false,&quot;new_bank_account_form_in&quot;:false,&quot;new_bank_account_form_it&quot;:false,&quot;new_bank_account_form_jp&quot;:false,&quot;new_bank_account_form_li&quot;:false,&quot;new_bank_account_form_lt&quot;:false,&quot;new_bank_account_form_lu&quot;:false,&quot;new_bank_account_form_lv&quot;:false,&quot;new_bank_account_form_mt&quot;:false,&quot;new_bank_account_form_mx&quot;:false,&quot;new_bank_account_form_my&quot;:false,&quot;new_bank_account_form_nl&quot;:false,&quot;new_bank_account_form_no&quot;:false,&quot;new_bank_account_form_nz&quot;:false,&quot;new_bank_account_form_pl&quot;:false,&quot;new_bank_account_form_pt&quot;:false,&quot;new_bank_account_form_ro&quot;:false,&quot;new_bank_account_form_se&quot;:false,&quot;new_bank_account_form_sg&quot;:false,&quot;new_bank_account_form_si&quot;:false,&quot;new_bank_account_form_sk&quot;:false,&quot;new_bank_account_form_th&quot;:false,&quot;new_bank_account_form_us&quot;:false,&quot;enable_le_cloning&quot;:true,&quot;bank_connections_in_onboarding_standard&quot;:true,&quot;bank_connections_in_onboarding_killswitch&quot;:false,&quot;enable_expanded_persons&quot;:false,&quot;climate_enable_july_onboarding_updates&quot;:true,&quot;climate_standard_connect_onboarding_enabled&quot;:false,&quot;is_cbsp_standard_account_with_data_sharing&quot;:false,&quot;connect_account_app_link&quot;:true,&quot;connect_account_app_affirm&quot;:true,&quot;connect_account_app_apple_pay_later&quot;:false,&quot;connect_account_app_cashapp&quot;:false,&quot;connect_account_app_klarna&quot;:true,&quot;connect_onboarding_custom_caa_ford&quot;:false,&quot;merchant_is_using_progressive_onboarding&quot;:false,&quot;merchant_is_eligible_for_us_progressive_onboarding&quot;:false,&quot;opal_show_upsell&quot;:false,&quot;seamless_standard_add_action_name&quot;:true,&quot;embedded_bank_account_form_ae&quot;:false,&quot;embedded_bank_account_form_ag&quot;:false,&quot;embedded_bank_account_form_al&quot;:false,&quot;embedded_bank_account_form_am&quot;:false,&quot;embedded_bank_account_form_ao&quot;:false,&quot;embedded_bank_account_form_ar&quot;:false,&quot;embedded_bank_account_form_at&quot;:false,&quot;embedded_bank_account_form_au&quot;:false,&quot;embedded_bank_account_form_az&quot;:false,&quot;embedded_bank_account_form_ba&quot;:false,&quot;embedded_bank_account_form_bd&quot;:false,&quot;embedded_bank_account_form_be&quot;:false,&quot;embedded_bank_account_form_bg&quot;:false,&quot;embedded_bank_account_form_bh&quot;:false,&quot;embedded_bank_account_form_bj&quot;:false,&quot;embedded_bank_account_form_bn&quot;:false,&quot;embedded_bank_account_form_bo&quot;:false,&quot;embedded_bank_account_form_br&quot;:false,&quot;embedded_bank_account_form_bs&quot;:false,&quot;embedded_bank_account_form_bt&quot;:false,&quot;embedded_bank_account_form_bw&quot;:false,&quot;embedded_bank_account_form_ca&quot;:false,&quot;embedded_bank_account_form_ch&quot;:false,&quot;embedded_bank_account_form_ci&quot;:false,&quot;embedded_bank_account_form_cl&quot;:false,&quot;embedded_bank_account_form_co&quot;:false,&quot;embedded_bank_account_form_cr&quot;:false,&quot;embedded_bank_account_form_cy&quot;:false,&quot;embedded_bank_account_form_cz&quot;:false,&quot;embedded_bank_account_form_de&quot;:false,&quot;embedded_bank_account_form_dk&quot;:false,&quot;embedded_bank_account_form_do&quot;:false,&quot;embedded_bank_account_form_dz&quot;:false,&quot;embedded_bank_account_form_ec&quot;:false,&quot;embedded_bank_account_form_ee&quot;:false,&quot;embedded_bank_account_form_eg&quot;:false,&quot;embedded_bank_account_form_es&quot;:false,&quot;embedded_bank_account_form_et&quot;:false,&quot;embedded_bank_account_form_fi&quot;:false,&quot;embedded_bank_account_form_fr&quot;:false,&quot;embedded_bank_account_form_ga&quot;:false,&quot;embedded_bank_account_form_gb&quot;:false,&quot;embedded_bank_account_form_ge&quot;:false,&quot;embedded_bank_account_form_gh&quot;:false,&quot;embedded_bank_account_form_gi&quot;:false,&quot;embedded_bank_account_form_gm&quot;:false,&quot;embedded_bank_account_form_gr&quot;:false,&quot;embedded_bank_account_form_gt&quot;:false,&quot;embedded_bank_account_form_gy&quot;:false,&quot;embedded_bank_account_form_hk&quot;:false,&quot;embedded_bank_account_form_hr&quot;:false,&quot;embedded_bank_account_form_hu&quot;:false,&quot;embedded_bank_account_form_id&quot;:false,&quot;embedded_bank_account_form_ie&quot;:false,&quot;embedded_bank_account_form_il&quot;:false,&quot;embedded_bank_account_form_in&quot;:false,&quot;embedded_bank_account_form_is&quot;:false,&quot;embedded_bank_account_form_it&quot;:false,&quot;embedded_bank_account_form_jm&quot;:false,&quot;embedded_bank_account_form_jo&quot;:false,&quot;embedded_bank_account_form_jp&quot;:false,&quot;embedded_bank_account_form_ke&quot;:false,&quot;embedded_bank_account_form_kh&quot;:false,&quot;embedded_bank_account_form_kr&quot;:false,&quot;embedded_bank_account_form_kw&quot;:false,&quot;embedded_bank_account_form_kz&quot;:false,&quot;embedded_bank_account_form_la&quot;:false,&quot;embedded_bank_account_form_lc&quot;:false,&quot;embedded_bank_account_form_li&quot;:false,&quot;embedded_bank_account_form_lk&quot;:false,&quot;embedded_bank_account_form_lt&quot;:false,&quot;embedded_bank_account_form_lu&quot;:false,&quot;embedded_bank_account_form_lv&quot;:false,&quot;embedded_bank_account_form_ma&quot;:false,&quot;embedded_bank_account_form_mc&quot;:false,&quot;embedded_bank_account_form_md&quot;:false,&quot;embedded_bank_account_form_mg&quot;:false,&quot;embedded_bank_account_form_mk&quot;:false,&quot;embedded_bank_account_form_mn&quot;:false,&quot;embedded_bank_account_form_mo&quot;:false,&quot;embedded_bank_account_form_mt&quot;:false,&quot;embedded_bank_account_form_mu&quot;:false,&quot;embedded_bank_account_form_mx&quot;:false,&quot;embedded_bank_account_form_my&quot;:false,&quot;embedded_bank_account_form_mz&quot;:false,&quot;embedded_bank_account_form_na&quot;:false,&quot;embedded_bank_account_form_ne&quot;:false,&quot;embedded_bank_account_form_ng&quot;:false,&quot;embedded_bank_account_form_nl&quot;:false,&quot;embedded_bank_account_form_no&quot;:false,&quot;embedded_bank_account_form_nz&quot;:false,&quot;embedded_bank_account_form_om&quot;:false,&quot;embedded_bank_account_form_pa&quot;:false,&quot;embedded_bank_account_form_pe&quot;:false,&quot;embedded_bank_account_form_ph&quot;:false,&quot;embedded_bank_account_form_pk&quot;:false,&quot;embedded_bank_account_form_pl&quot;:false,&quot;embedded_bank_account_form_pt&quot;:false,&quot;embedded_bank_account_form_py&quot;:false,&quot;embedded_bank_account_form_qa&quot;:false,&quot;embedded_bank_account_form_ro&quot;:false,&quot;embedded_bank_account_form_rs&quot;:false,&quot;embedded_bank_account_form_rw&quot;:false,&quot;embedded_bank_account_form_sa&quot;:false,&quot;embedded_bank_account_form_se&quot;:false,&quot;embedded_bank_account_form_sg&quot;:false,&quot;embedded_bank_account_form_si&quot;:false,&quot;embedded_bank_account_form_sk&quot;:false,&quot;embedded_bank_account_form_sm&quot;:false,&quot;embedded_bank_account_form_sn&quot;:false,&quot;embedded_bank_account_form_sv&quot;:false,&quot;embedded_bank_account_form_th&quot;:false,&quot;embedded_bank_account_form_tn&quot;:false,&quot;embedded_bank_account_form_tr&quot;:false,&quot;embedded_bank_account_form_tt&quot;:false,&quot;embedded_bank_account_form_tw&quot;:false,&quot;embedded_bank_account_form_tz&quot;:false,&quot;embedded_bank_account_form_us&quot;:false,&quot;embedded_bank_account_form_uy&quot;:false,&quot;embedded_bank_account_form_uz&quot;:false,&quot;embedded_bank_account_form_vn&quot;:false,&quot;embedded_bank_account_form_za&quot;:false}}
+	</script>
+	<script type="application/json" id="tiny_preloaded_json">
+		{&quot;cdn_base_url&quot;:&quot;https://b.stripecdn.com/manage-statics-srv&quot;,&quot;csrf_token&quot;:&quot;kqOOIYImJI5_JY1PoMWFUBw5KzeTY1xdi8q0tg3Ptwv0O15JSCZbH4r0W1d0a4g1f5N-4wtzFXdRmnKNdKgDSDw-AYTZVJweEXxzW8brlNS12etuyAdC48-zVpNQz08cMyGO9XAjAw==&quot;,&quot;current_head&quot;:&quot;b88d8844c1530e2d9e1ad81c34e5d01f174aa352&quot;,&quot;current_version&quot;:&quot;2022-08-01&quot;,&quot;host_set&quot;:&quot;default&quot;,&quot;sentry_enabled&quot;:true,&quot;sentry_projects&quot;:{&quot;automations&quot;:&quot;https://fe921ccba9b040959388b77596d94da6@errors.stripe.com/967&quot;,&quot;dashboard_default&quot;:&quot;https://2c9d67d04892426ab2c02b9958953e15@errors.stripe.com/7&quot;,&quot;dashboard_foundation&quot;:&quot;https://55f46479a5294df49627a0e0373f09ce@errors.stripe.com/1010&quot;,&quot;dashboard_product&quot;:&quot;https://f1cffe9e27a04b98b955f785405a3d0e@errors.stripe.com/890&quot;,&quot;developer_products&quot;:&quot;https://e8205334b22944a8a30b339d219b325c@errors.stripe.com/267&quot;,&quot;cxp_optimization&quot;:&quot;https://aaeadd8043ff4c3582110d33cbbc7d97@errors.stripe.com/860&quot;,&quot;lpm_adoption&quot;:&quot;https://c5e4ec25663542c5abab9b19bc6a2eea@errors.stripe.com/764&quot;,&quot;payins_insights&quot;:&quot;https://2230ab74169a40aa969ff46451241841@errors.stripe.com/881&quot;,&quot;payins_dashboard&quot;:&quot;https://90d8ad77a9864831921c392d793ea9fb@errors.stripe.com/1023&quot;,&quot;terminal&quot;:&quot;https://40a30b4473ea43509b61eda0024fd8a2@errors.stripe.com/271&quot;,&quot;terminal_device_management&quot;:&quot;https://40a30b4473ea43509b61eda0024fd8a2@errors.stripe.com/271&quot;,&quot;terminal_hardware_orders&quot;:&quot;https://8689bb45e49a4f868c2bcad8c79f0ce5@errors.stripe.com/681&quot;,&quot;atlas&quot;:&quot;https://ed68af4cb70541eda554e01372542a06@errors.stripe.com/272&quot;,&quot;connections_merchant_dashboard&quot;:&quot;https://f1251a25a7804408b84cab9c4471e9f4@errors.stripe.com/872&quot;,&quot;climate&quot;:&quot;https://2225b2409b274ba28f86dd1500df9b80@errors.stripe.com/400&quot;,&quot;emerald&quot;:&quot;https://63ba7ae545264498ab3bce45317f3812@errors.stripe.com/276&quot;,&quot;stripe_card&quot;:&quot;https://e08e72e710c2480888311115dc63a796@errors.stripe.com/493&quot;,&quot;banking&quot;:&quot;https://ce6fba07eeaa4bdd99ffd52dc96de8b6@errors.stripe.com/335&quot;,&quot;direct_banking&quot;:&quot;https://61970ebf995c4bf1adf2713c73ca80f5@errors.stripe.com/668&quot;,&quot;connect_platform_experience&quot;:&quot;https://cb6868a2387b4cba82027fd8d7a2fd6e@errors.stripe.com/277&quot;,&quot;connect_platform_experiences&quot;:&quot;https://cb6868a2387b4cba82027fd8d7a2fd6e@errors.stripe.com/277&quot;,&quot;connect_managed_risk&quot;:&quot;https://3bba14d8585c4c878a7eee87cd2e6213@errors.stripe.com/761&quot;,&quot;connect_onboarding&quot;:&quot;https://aa9a1009979a485a83908dc4eb913d60@errors.stripe.com/869&quot;,&quot;new_user_journey&quot;:&quot;https://f34eb4d46088416ba26b1e118e992a30@errors.stripe.com/677&quot;,&quot;accounts_ui&quot;:&quot;https://d274b27791c144b9aee2825c649e5c04@errors.stripe.com/891&quot;,&quot;express&quot;:&quot;https://d274b27791c144b9aee2825c649e5c04@errors.stripe.com/891&quot;,&quot;account_ux_infra&quot;:&quot;https://292ea7992b0f4e4db2abd96280207489@errors.stripe.com/861&quot;,&quot;onboarding_experience&quot;:&quot;https://6f26365bb84f4b07abee2bf3fd5876d9@errors.stripe.com/373&quot;,&quot;direct_onboarding&quot;:&quot;https://6f26365bb84f4b07abee2bf3fd5876d9@errors.stripe.com/373&quot;,&quot;secure_frameworks&quot;:&quot;https://e0cad97696704d51bf173a88ebc06cc4@errors.stripe.com/287&quot;,&quot;ruxp&quot;:&quot;https://b07faf88bde9438096f5fe593f3af14d@errors.stripe.com/302&quot;,&quot;invoices&quot;:&quot;https://6d8c4b388926455c8525989a3dd634e4@errors.stripe.com/307&quot;,&quot;recurring_billing&quot;:&quot;https://f3e0a2437d0247fabf6ce23ab0ea5f9d@errors.stripe.com/306&quot;,&quot;billx&quot;:&quot;https://c0757829041f47d789a1fc2e8fd024be@errors.stripe.com/318&quot;,&quot;customer_portal&quot;:&quot;https://8783aac8c69e4b2cac14b81cd8b07e75@errors.stripe.com/594&quot;,&quot;customer_portal_login&quot;:&quot;https://ec79fe9e9c2b401d91553a3def247c4c@errors.stripe.com/808&quot;,&quot;app_marketplace&quot;:&quot;https://b5efd646d6644e1f88a4b987eab09a61@errors.stripe.com/608&quot;,&quot;quotes&quot;:&quot;https://6c52eb0e447944f690b9f92921ac04a6@errors.stripe.com/596&quot;,&quot;accounts_dashboard&quot;:&quot;https://55ac0454c3274e0693b0e9c4278ae013@errors.stripe.com/779&quot;,&quot;account_v2&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;attached_payment_methods&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_apis&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_as_opal_recipient&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_billing_settings&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_lifecycle&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_readonly_srv&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customers_modeling&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;payment_method_deduplication&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_tax_data&quot;:&quot;https://38f9ed4b12734eb48af7500e01285106@errors.stripe.com/654&quot;,&quot;customer_balances&quot;:&quot;https://7355665ad86b4d94b0b3b213b4d8f008@errors.stripe.com/656&quot;,&quot;customer_capabilities&quot;:&quot;https://7355665ad86b4d94b0b3b213b4d8f008@errors.stripe.com/656&quot;,&quot;gift_cards&quot;:&quot;https://7355665ad86b4d94b0b3b213b4d8f008@errors.stripe.com/656&quot;,&quot;payment_method_preferences&quot;:&quot;https://7355665ad86b4d94b0b3b213b4d8f008@errors.stripe.com/656&quot;,&quot;customers_dashboard&quot;:&quot;https://7355665ad86b4d94b0b3b213b4d8f008@errors.stripe.com/656&quot;,&quot;customer_dispute_analytics&quot;:&quot;https://7355665ad86b4d94b0b3b213b4d8f008@errors.stripe.com/656&quot;,&quot;contacts&quot;:&quot;https://7d3b8cb641464b3fb1d8fe5fc05c986a@errors.stripe.com/740&quot;,&quot;guest_customers&quot;:&quot;https://7d3b8cb641464b3fb1d8fe5fc05c986a@errors.stripe.com/740&quot;,&quot;coupons&quot;:&quot;https://52003442c2d34da2a0225451063f0ee4@errors.stripe.com/752&quot;,&quot;products&quot;:&quot;https://52003442c2d34da2a0225451063f0ee4@errors.stripe.com/752&quot;,&quot;billing_analytics&quot;:&quot;https://8df7e4664b0746e9ad6966cae5387df0@errors.stripe.com/279&quot;,&quot;revenue_recognition&quot;:&quot;https://801b894b0f404f19b29378295ac67ebe@errors.stripe.com/676&quot;,&quot;growth_product&quot;:&quot;https://8c13f30cb4e64d01a1e98f6f7c2b15b6@errors.stripe.com/313&quot;,&quot;gelato&quot;:&quot;https://38f7c50ce1ba495291d97fd64165f8c0@errors.stripe.com/339&quot;,&quot;gelato_experience&quot;:&quot;https://38f7c50ce1ba495291d97fd64165f8c0@errors.stripe.com/339&quot;,&quot;radar&quot;:&quot;https://a5f5fc46665e4e3b93459bc24d178b5c@errors.stripe.com/161&quot;,&quot;resolution&quot;:&quot;https://3a5349dadaaa4fe99e95a06c9f83d220@errors.stripe.com/408&quot;,&quot;i18n&quot;:&quot;https://5bbdaf7e322149be926c9db3dde5cdfa@errors.stripe.com/369&quot;,&quot;dashboard_experience&quot;:&quot;https://d299f6a6ea0a4c3d9b1dd7f244d8bc3d@errors.stripe.com/388&quot;,&quot;auth_opt&quot;:&quot;https://d43908be97e348019a089641caf9323d@errors.stripe.com/381&quot;,&quot;capital&quot;:&quot;https://a815a170bf5a422d865dd7dbd1ce66fa@errors.stripe.com/394&quot;,&quot;capital_core_products&quot;:&quot;https://cb5ac50fd9a44be5a812da66a8cf66c3@errors.stripe.com/901&quot;,&quot;capital_for_platforms&quot;:&quot;https://06c9f1c2a35345b3be0a22276e35776c@errors.stripe.com/829&quot;,&quot;capital_underwriting&quot;:&quot;https://838bee49f7e141de91b0491a160227b4@errors.stripe.com/797&quot;,&quot;sigma&quot;:&quot;https://275a47d76fea4f37a420e42af28e339e@errors.stripe.com/157&quot;,&quot;financial_reporting&quot;:&quot;https://5c51d02c322e458b83fb6d93d0ad14b8@errors.stripe.com/332&quot;,&quot;payouts_platform&quot;:&quot;https://d1424aac74db465cabc28d6499be99ab@errors.stripe.com/420&quot;,&quot;mms_user_experiences&quot;:&quot;https://88dbb7aeb7844faf8367b124be618a37@errors.stripe.com/902&quot;,&quot;payment_links&quot;:&quot;https://8e60e284354e41b9b5bd75d9ee57f320@errors.stripe.com/621&quot;,&quot;customers_merchant_dashboard&quot;:&quot;https://e0d59861e1d946cd9b5d74e6d2a83167@errors.stripe.com/993&quot;,&quot;franklin_product&quot;:&quot;https://a4e6c3801b7c44cf972ea6fe94e79f70@errors.stripe.com/395&quot;,&quot;tax_compatibility_checker&quot;:&quot;https://9efc3b8dad2243b2a792fb108584c075@errors.stripe.com/998&quot;,&quot;uax&quot;:&quot;https://40278c88f4fd4265b3f2b995ec391b79@errors.stripe.com/787&quot;,&quot;tax_reporting&quot;:&quot;https://9dc3edb17ac340ceb4ac348d852010b7@errors.stripe.com/481&quot;,&quot;support_products&quot;:&quot;https://a77292b9ecf44950ac0ac0d079c6c572@errors.stripe.com/484&quot;,&quot;merchant_support_experience&quot;:&quot;https://dfe7675d4fde4000bbb0801068db1457@errors.stripe.com/773&quot;,&quot;risk_experience&quot;:&quot;https://474878f282724c91addc0bd782366c3c@errors.stripe.com/494&quot;,&quot;issuing&quot;:&quot;https://7f4705e1001a42afa9b7f4cf48b0fa7d@errors.stripe.com/524&quot;,&quot;merchant_messaging&quot;:&quot;https://dde1fe8313814471afd92219fa988740@errors.stripe.com/569&quot;,&quot;radar_decisioning&quot;:&quot;https://7ca8fc86e50c4ff999d8e320d8c4b549@errors.stripe.com/573&quot;,&quot;tailor&quot;:&quot;https://8ecfcdc4439c49d599927d6a809884f2@errors.stripe.com/574&quot;,&quot;merchant_health&quot;:&quot;https://48d1f34146b8486baa45036e9ae97833@errors.stripe.com/614&quot;,&quot;affogato&quot;:&quot;https://e475f28ef2fd45caa5d288fe914ed01c@errors.stripe.com/670&quot;,&quot;subscription_recovery_link&quot;:&quot;https://7263d3e1f08846a6a9c3f41c4438aa7d@errors.stripe.com/686&quot;,&quot;revenue_recovery_and_optimization&quot;:&quot;https://17876c4e9bbf4718a027a85633feb4fb@errors.stripe.com/644&quot;,&quot;stripe_data_pipeline&quot;:&quot;https://b671129843ac4c7c821fdd514fac3fe4@errors.stripe.com/432&quot;,&quot;storage_integrations&quot;:&quot;https://1722dc9cdeb4467db1df316ec8d479d9@errors.stripe.com/805&quot;,&quot;privacy_portal&quot;:&quot;https://4eb42cf04a324ae2aff20bae1c38c10c@errors.stripe.com/847&quot;,&quot;iam_login_services&quot;:&quot;https://e66886748d81458d81141a7b67473194@errors.stripe.com/864&quot;,&quot;webapp_platform&quot;:&quot;https://28219678049240a7b5ccd5c4fa8075fe@errors.stripe.com/992&quot;,&quot;sandboxes&quot;:&quot;https://bca2f0bb8b104088950e90801cf2bfcc@errors.stripe.com/904&quot;,&quot;orr_platform&quot;:&quot;https://71ed6b228a4143328f923dc00451a08e@errors.stripe.com/917&quot;,&quot;provider_platform&quot;:&quot;https://cb545301a4d3498b966aef456590624a@errors.stripe.com/918&quot;,&quot;recon_product&quot;:&quot;https://cd380f7fde8e44f8a860e1948ddd676b@errors.stripe.com/922&quot;,&quot;connect_marketplaces&quot;:&quot;https://a12682361e714d27a8efc4eea5ad2c7d@errors.stripe.com/1054&quot;},&quot;cookie_enforcement_mode&quot;:&quot;open&quot;,&quot;analytics_rb_event_id&quot;:&quot;87675f2b-e0e2-46bf-b043-e0aae3141f2b&quot;,&quot;exp_page_load_id&quot;:&quot;c33b9b28-c209-482f-89cb-b41da420ac74&quot;,&quot;log_unhandled_rejections&quot;:false,&quot;enable_client_init_error_detector&quot;:true,&quot;analytics_js_new_cookies&quot;:true,&quot;webpack_experiment_enabled&quot;:false}
+	</script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/config-c9c776f3b2c7d15819d63b4291efb162796813593aa79c70395751785734dfc0.js">
+	</script>
+	<script type="application/json" id="analytics_config">
+		{}
+	</script>
+
+	<script type="application/json" id="webpack_public_path">
+		&quot;https://b.stripecdn.com/manage-statics-srv/assets/&quot;
+	</script>
+
+
+
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.runtime~seamless_standard.8c93877d2ba5cabdf3be.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~cancel_recovery~climate_connect_no_code~default_redirect_uri~durable_connect_onboarding~dura~78098241.6cd9790de99c1afbac22.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~cancel_recovery~climate_connect_no_code~default_redirect_uri~durable_connect_onboarding~dura~100d4bc7.7aa180a0f35a1c32b8e6.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~cancel_recovery~climate_connect_no_code~default_redirect_uri~durable_connect_onboarding~dura~97b740ca.acc1c628588a637755e4.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~cancel_recovery~climate_connect_no_code~durable_connect_onboarding~durable_custom_onboarding~6fd8ff94.09f6697e8214c8140b70.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~cancel_recovery~climate_connect_no_code~durable_connect_onboarding~durable_custom_onboarding~8fce0a6f.66d8a0c9b559c749ef88.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~climate_connect_no_code~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_~83e6a816.3492c87a3292cdf1c196.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~climate_connect_no_code~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_~e2f99cd9.0e3cdc99c2bb40ad3fe8.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~climate~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_account_manageme~144f7e9b.cd2b783bcea0a5ae660d.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~climate_connect_no_code~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_~ea94789b.540b6b6eb6cd86334232.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_account_management~durab~25fae20a.eee95fe0a71a2d22567b.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_account_management~durab~114cfa6b.9df812faf734c4aa065d.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~durable_connect_onboarding~durable_custom_onboarding~durable_hosted_account_management~durab~2f956ad6.fc09893d586f9caf0f86.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~durable_connect_onboarding~durable_custom_onboarding~durable_link_expired~express_oauth~expr~07f096be.173d1856b6c182b0c7f9.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~durable_connect_onboarding~durable_custom_onboarding~durable_link_expired~express_oauth~expr~8f92966b.6a4a1b00ecd26273988e.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.vendors~durable_connect_onboarding~durable_custom_onboarding~durable_link_expired~express_oauth~expr~d2c9ab5c.b8661c2d335861207aee.min.js"
+		defer crossorigin="anonymous"></script>
+	<script
+		src="https://b.stripecdn.com/manage-statics-srv/assets/connect-flows.seamless_standard.d724c6d7cb499f833295.min.js"
+		defer crossorigin="anonymous"></script>
+
+	<script type="application/json" id="sw_tracked">
+		false
+	</script>
+
+
+</body>
+
+</html>
